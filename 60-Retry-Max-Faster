@@ -1,0 +1,77 @@
+(async () => {
+    const MAX_VIDEOS = 9000; // Maximum number of videos to collect
+    let scrollDelay = 3000; // Initial delay between scroll actions (in milliseconds)
+    const MAX_RETRIES = 60; // Maximum retries if no new content is loaded
+    const videoLinks = new Set(); // Store unique video links
+    let retries = 0; // Counter for retries
+    let scrollAttempts = 0; // Track scroll attempts for checkpointing
+
+    // Helper to scroll to the bottom of the page
+    const scrollToBottom = async () => {
+        return new Promise(resolve => {
+            window.scrollBy(0, document.body.scrollHeight);
+            setTimeout(resolve, scrollDelay);
+        });
+    };
+
+    // Helper to extract video links
+    const getVideoLinks = () => {
+        const videos = document.querySelectorAll('a[href*="/video/"]'); // Only select video links
+        videos.forEach(video => {
+            const url = video.href;
+            if (url && !videoLinks.has(url)) {
+                videoLinks.add(url); // Store unique URLs
+            }
+        });
+    };
+
+    // Helper to save progress periodically
+    const saveProgress = (isFinal = false) => {
+        const filename = isFinal ? 'tiktok_video_links_final.txt' : `tiktok_video_links_checkpoint_${Date.now()}.txt`;
+        const blob = new Blob([Array.from(videoLinks).join('\n')], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        console.log(`Progress saved: ${filename}`);
+    };
+
+    // Main execution
+    console.log("Starting to collect video links...");
+
+    while (videoLinks.size < MAX_VIDEOS && retries < MAX_RETRIES) {
+        const previousCount = videoLinks.size;
+
+        // Extract links and scroll
+        getVideoLinks();
+        await scrollToBottom();
+        scrollAttempts++;
+
+        // Adjust scroll delay dynamically based on progress
+        if (videoLinks.size > 500) scrollDelay = 4000;
+        if (videoLinks.size > 1000) scrollDelay = 5000;
+
+        // Check if new videos were loaded
+        if (videoLinks.size === previousCount) {
+            retries++;
+            console.log(`No new videos loaded. Retry ${retries}/${MAX_RETRIES}.`);
+        } else {
+            retries = 0; // Reset retries if new videos are loaded
+            console.log(`Collected ${videoLinks.size} videos so far...`);
+        }
+
+        // Save progress every 10 scroll attempts or if retries reach half the limit
+        if (scrollAttempts % 10 === 0 || retries === Math.floor(MAX_RETRIES / 2)) {
+            saveProgress();
+        }
+    }
+
+    // Final save of collected links
+    if (videoLinks.size > 0) {
+        saveProgress(true); // Save final progress
+        console.log(`Download complete: Collected a total of ${videoLinks.size} videos.`);
+    } else {
+        console.error("No videos were collected.");
+    }
+})();
